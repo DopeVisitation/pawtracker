@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  SafeAreaView, Modal, TextInput, Alert, ActivityIndicator,
+  SafeAreaView, Modal, TextInput, ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -84,14 +84,15 @@ function CatFormModal({ visible, onClose, editCat }: CatFormModalProps) {
   const [intolerances, setIntolerances] = useState(editCat?.intolerances ?? '');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Reset when modal opens for a different cat
   const handleOpen = () => {
     setName(editCat?.name ?? '');
     setBirthDate(editCat?.birth_date ?? '');
     setNotes(editCat?.notes ?? '');
     setIntolerances(editCat?.intolerances ?? '');
     setPhotoUri(null);
+    setUploadError(null);
   };
 
   const pickImage = async () => {
@@ -107,27 +108,39 @@ function CatFormModal({ visible, onClose, editCat }: CatFormModalProps) {
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
 
-  const uploadPhoto = async (uri: string): Promise<string | undefined> => {
-    if (!household) return;
-    const fileName = `cats/${household.id}/${Date.now()}.jpg`;
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const { data, error } = await supabase.storage
-      .from('photos')
-      .upload(fileName, blob, { contentType: 'image/jpeg' });
-    if (error || !data) return undefined;
-    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(data.path);
-    return urlData.publicUrl;
+  const uploadPhoto = async (uri: string): Promise<string | null> => {
+    if (!household) return null;
+    try {
+      const fileName = `cats/${household.id}/${Date.now()}.jpg`;
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const { data, error } = await supabase.storage
+        .from('photos')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false });
+      if (error || !data) return null;
+      const { data: urlData } = supabase.storage.from('photos').getPublicUrl(data.path);
+      return urlData.publicUrl;
+    } catch {
+      return null;
+    }
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Name fehlt', 'Bitte einen Namen eingeben.');
+      setUploadError('Bitte einen Namen eingeben.');
       return;
     }
     setUploading(true);
+    setUploadError(null);
     let photoUrl: string | undefined = editCat?.photo_url;
-    if (photoUri) photoUrl = await uploadPhoto(photoUri);
+    if (photoUri) {
+      const uploaded = await uploadPhoto(photoUri);
+      if (uploaded) {
+        photoUrl = uploaded;
+      } else {
+        setUploadError('Foto konnte nicht hochgeladen werden. Andere Daten werden trotzdem gespeichert.');
+      }
+    }
 
     if (isEdit && editCat) {
       await updateCat(editCat.id, {
@@ -179,6 +192,11 @@ function CatFormModal({ visible, onClose, editCat }: CatFormModalProps) {
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 20 }}>
+          {uploadError && (
+            <View style={[styles.errorBox, { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }]}>
+              <Text style={styles.errorText}>{uploadError}</Text>
+            </View>
+          )}
           {/* Photo */}
           <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
             {currentPhoto ? (
@@ -357,4 +375,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
+  errorBox: { borderRadius: 8, borderWidth: 1, padding: 12, marginBottom: 12 },
+  errorText: { color: '#dc2626', fontSize: 13 },
 });

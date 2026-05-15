@@ -67,6 +67,9 @@ export default function AppLayout() {
       <Tabs.Screen name="outdoor"
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🌿" label="Freigang" focused={focused} colors={colors} /> }}
       />
+      <Tabs.Screen name="gallery"
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🖼️" label="Galerie" focused={focused} colors={colors} /> }}
+      />
       <Tabs.Screen name="food"
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🥫" label="Vorrat" focused={focused} colors={colors} /> }}
       />

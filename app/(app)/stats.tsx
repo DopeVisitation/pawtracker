@@ -68,22 +68,26 @@ function computeMonthCalendar(feedings: FeedingData[], month: Date) {
   const year = month.getFullYear();
   const m = month.getMonth();
   const daysInMonth = new Date(year, m + 1, 0).getDate();
-  const dayMap: Record<number, { total: number; score: number }> = {};
+  const dayMap: Record<number, { total: number; good: number; none: number }> = {};
   for (const f of feedings) {
     if (!f.eaten_status) continue;
     const d = new Date(f.fed_at);
     if (d.getMonth() !== m || d.getFullYear() !== year) continue;
     const day = d.getDate();
-    if (!dayMap[day]) dayMap[day] = { total: 0, score: 0 };
+    if (!dayMap[day]) dayMap[day] = { total: 0, good: 0, none: 0 };
     dayMap[day].total++;
-    const score = ({ all: 4, most: 3, little: 2, none: 1 } as any)[f.eaten_status] ?? 0;
-    dayMap[day].score += score;
+    if (f.eaten_status === 'all' || f.eaten_status === 'most') dayMap[day].good++;
+    if (f.eaten_status === 'none') dayMap[day].none++;
   }
   return Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
     const data = dayMap[day];
-    const avg = data && data.total > 0 ? data.score / data.total : null;
-    return { day, avg, total: data?.total ?? 0 };
+    return {
+      day,
+      total: data?.total ?? 0,
+      good: data?.good ?? 0,
+      none: data?.none ?? 0,
+    };
   });
 }
 
@@ -99,12 +103,13 @@ function computeOutdoorByDay(sessions: OutdoorData[], days: number) {
   });
 }
 
-function calColor(avg: number | null, mutedLight: string): string {
-  if (avg === null) return mutedLight;
-  if (avg >= 3.5) return '#16a34a';
-  if (avg >= 2.5) return '#86efac';
-  if (avg >= 1.5) return '#fb923c';
-  return '#f87171';
+function calColor(good: number, none: number, total: number, mutedLight: string): string {
+  if (total === 0) return mutedLight;
+  if (none === total) return '#dc2626'; // all refused → red
+  if (good >= 3) return '#15803d';     // 3/3 gut/sehr gut → dark green
+  if (good >= 2) return '#4ade80';     // 2/3 → light green
+  if (good >= 1) return '#facc15';     // 1/3 → yellow
+  return '#ef4444';                     // 0/3 → red
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -305,11 +310,12 @@ export default function StatsScreen() {
             {/* Legend */}
             <View style={s.legend}>
               {([
-                { color: '#16a34a', label: 'Super' },
-                { color: '#86efac', label: 'Gut' },
-                { color: '#fb923c', label: 'Wenig' },
-                { color: '#f87171', label: 'Kaum' },
-                { color: colors.mutedLight, label: 'Keine Daten' },
+                { color: '#15803d', label: '3/3 gut' },
+                { color: '#4ade80', label: '2/3 gut' },
+                { color: '#facc15', label: '1/3 gut' },
+                { color: '#ef4444', label: '0/3' },
+                { color: '#dc2626', label: 'verweigert !' },
+                { color: colors.mutedLight, label: 'kein Eintrag' },
               ] as const).map((item) => (
                 <View key={item.label} style={s.legendItem}>
                   <View style={[s.legendDot, { backgroundColor: item.color }]} />
@@ -330,16 +336,23 @@ export default function StatsScreen() {
                 <View key={`e${i}`} style={[s.calCell, { backgroundColor: 'transparent' }]} />
               ))}
               {/* Day cells */}
-              {calData.map(({ day, avg, total }) => (
-                <View key={day} style={[s.calCell, { backgroundColor: calColor(avg, colors.mutedLight) }]}>
-                  <Text style={[s.calNum, { color: avg !== null ? '#fff' : colors.textMuted }]}>{day}</Text>
-                  {total > 0 && (
-                    <Text style={[s.calCount, { color: avg !== null ? 'rgba(255,255,255,0.8)' : colors.textMuted }]}>
-                      {total}×
-                    </Text>
-                  )}
-                </View>
-              ))}
+              {calData.map(({ day, good, none, total }) => {
+                const bg = calColor(good, none, total, colors.mutedLight);
+                const hasData = total > 0;
+                const allRefused = hasData && none === total;
+                const textColor = hasData ? '#fff' : colors.textMuted;
+                return (
+                  <View key={day} style={[s.calCell, { backgroundColor: bg }]}>
+                    <Text style={[s.calNum, { color: textColor }]}>{day}</Text>
+                    {allRefused
+                      ? <Text style={[s.calExcl, { color: '#fff' }]}>!</Text>
+                      : total > 0
+                        ? <Text style={[s.calCount, { color: 'rgba(255,255,255,0.85)' }]}>{good}/{total}</Text>
+                        : null
+                    }
+                  </View>
+                );
+              })}
             </View>
           </View>
         </ScrollView>
@@ -387,4 +400,5 @@ const s = StyleSheet.create({
   calWeekday: { fontSize: 10, fontWeight: '700' },
   calNum:     { fontSize: 11, fontWeight: '700' },
   calCount:   { fontSize: 9 },
+  calExcl:    { fontSize: 12, fontWeight: '900' },
 });
