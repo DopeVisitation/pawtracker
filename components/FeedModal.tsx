@@ -9,13 +9,14 @@ import { useColors } from '../lib/theme-context';
 import { RADIUS, SHADOWS } from '../lib/theme';
 import { MealType, MEAL_SCHEDULE, EATEN_STATUS_LABELS, EatenStatus } from '../types';
 import { getFoodVisual } from '../lib/foodIcons';
+import { FeedSuccessData } from './SuccessToast';
 
 interface Props {
   visible: boolean;
   catId?: string;
   mealType?: MealType;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (data: FeedSuccessData) => void;
 }
 
 export default function FeedModal({ visible, catId, mealType, onClose, onSuccess }: Props) {
@@ -65,8 +66,17 @@ export default function FeedModal({ visible, catId, mealType, onClose, onSuccess
       return;
     }
 
+    const foodObj = foods.find((f) => f.id === selectedFood);
+    const visual = foodObj ? getFoodVisual(foodObj) : undefined;
+    const statusData = eatenStatus ? EATEN_STATUS_LABELS[eatenStatus] : undefined;
+
     reset();
-    onSuccess?.();
+    onSuccess?.({
+      foodEmoji: visual?.emoji,
+      foodName: foodObj?.name,
+      eatenEmoji: statusData?.emoji,
+      eatenLabel: statusData?.label,
+    });
     onClose();
   };
 

@@ -14,8 +14,9 @@ import { getAllCatsMealRecs } from '../../lib/recommendations';
 import { getFoodVisual } from '../../lib/foodIcons';
 import { supabase } from '../../lib/supabase';
 import FeedModal from '../../components/FeedModal';
+import FeedingDetailModal from '../../components/FeedingDetailModal';
 import TipsModal from '../../components/TipsModal';
-import SuccessToast from '../../components/SuccessToast';
+import SuccessToast, { FeedSuccessData } from '../../components/SuccessToast';
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -31,10 +32,11 @@ function getGreeting(name: string) {
 // MealPill
 // ──────────────────────────────────────────────────────────────
 function MealPill({
-  type, fedAt, fedBy, foodEmoji, onPress, colors,
+  type, fedAt, fedBy, foodEmoji, onPress, onViewDetail, colors,
 }: {
   type: MealType; fedAt?: string; fedBy?: string; foodEmoji?: string;
-  onPress: () => void; colors: ReturnType<typeof useColors>;
+  onPress: () => void; onViewDetail: () => void;
+  colors: ReturnType<typeof useColors>;
 }) {
   const info = MEAL_SCHEDULE[type];
   const isFed = Boolean(fedAt);
@@ -54,9 +56,8 @@ function MealPill({
         isOverdue && { backgroundColor: colors.dangerLight, borderColor: colors.danger },
         isDue && { backgroundColor: colors.warningLight, borderColor: colors.warning },
       ]}
-      onPress={onPress}
+      onPress={isFed ? onViewDetail : onPress}
       activeOpacity={0.8}
-      disabled={isFed}
     >
       <Text style={styles.mealEmoji}>{foodEmoji || info.emoji}</Text>
       <View style={{ flex: 1 }}>
@@ -71,7 +72,7 @@ function MealPill({
           </Text>
         )}
       </View>
-      {isFed && <Text style={[styles.checkmark, { color: colors.success }]}>✓</Text>}
+      {isFed && <Text style={[styles.checkmark, { color: colors.success }]}>👁</Text>}
       {!isFed && (
         <View style={[styles.feedBtn, { backgroundColor: colors.primary }]}>
           <Text style={styles.feedBtnText}>+</Text>
@@ -85,10 +86,11 @@ function MealPill({
 // CatCard
 // ──────────────────────────────────────────────────────────────
 function CatCard({
-  status, onFeed, colors,
+  status, onFeed, onViewDetail, colors,
 }: {
   status: TodayFeedingStatus;
   onFeed: (catId: string, mealType: MealType) => void;
+  onViewDetail: (catId: string, mealType: MealType) => void;
   colors: ReturnType<typeof useColors>;
 }) {
   const allFed = Boolean(status.morning_fed_at && status.noon_fed_at && status.evening_fed_at);
@@ -114,7 +116,7 @@ function CatCard({
         <View style={styles.catInfo}>
           <Text style={[styles.catName, { color: colors.text }]}>{status.cat_name}</Text>
           <Text style={[styles.catSubtitle, { color: colors.textMuted }]}>
-            {allFed ? '🎉 Alle Mahlzeiten erledigt!' : 'Mahlzeiten heute'}
+            {allFed ? '🎉 Alle Mahlzeiten erledigt!' : 'Tippe ✓ für Details'}
           </Text>
         </View>
       </View>
@@ -125,6 +127,7 @@ function CatCard({
             fedAt={status[`${type}_fed_at` as keyof TodayFeedingStatus] as string}
             fedBy={status[`${type}_fed_by` as keyof TodayFeedingStatus] as string}
             onPress={() => onFeed(status.cat_id, type)}
+            onViewDetail={() => onViewDetail(status.cat_id, type)}
           />
         ))}
       </View>
@@ -469,8 +472,10 @@ export default function DashboardScreen() {
   const { profile, todayStatus, isLoading, fetchTodayStatus } = useAppStore();
   const colors = useColors();
   const [feedTarget, setFeedTarget] = useState<{ catId: string; mealType: MealType } | null>(null);
+  const [detailTarget, setDetailTarget] = useState<{ catId: string; mealType: MealType } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState(false);
+  const [toastData, setToastData] = useState<FeedSuccessData | undefined>();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -527,6 +532,7 @@ export default function DashboardScreen() {
             status={status}
             colors={colors}
             onFeed={(catId, mealType) => setFeedTarget({ catId, mealType })}
+            onViewDetail={(catId, mealType) => setDetailTarget({ catId, mealType })}
           />
         ))}
 
@@ -549,13 +555,21 @@ export default function DashboardScreen() {
         catId={feedTarget?.catId}
         mealType={feedTarget?.mealType}
         onClose={() => setFeedTarget(null)}
-        onSuccess={() => setToast(true)}
+        onSuccess={(data) => { setToastData(data); setToast(true); }}
+      />
+
+      <FeedingDetailModal
+        visible={Boolean(detailTarget)}
+        catId={detailTarget?.catId}
+        mealType={detailTarget?.mealType}
+        onClose={() => setDetailTarget(null)}
       />
 
       <SuccessToast
         message="Fütterung eingetragen!"
         visible={toast}
-        onHide={() => setToast(false)}
+        onHide={() => { setToast(false); setToastData(undefined); }}
+        feedData={toastData}
       />
     </SafeAreaView>
   );

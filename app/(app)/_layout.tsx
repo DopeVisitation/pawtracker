@@ -56,7 +56,16 @@ export default function AppLayout() {
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🐱" label="Katzen" focused={focused} colors={colors} /> }}
       />
       <Tabs.Screen name="history"
-        options={{ tabBarButton: () => null, href: null }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📋" label="Verlauf" focused={focused} colors={colors} /> }}
+      />
+      <Tabs.Screen name="notes"
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📝" label="Notizen" focused={focused} colors={colors} /> }}
+      />
+      <Tabs.Screen name="litter"
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🚿" label="Klos" focused={focused} colors={colors} /> }}
+      />
+      <Tabs.Screen name="outdoor"
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🌿" label="Freigang" focused={focused} colors={colors} /> }}
       />
       <Tabs.Screen name="food"
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🥫" label="Vorrat" focused={focused} colors={colors} /> }}

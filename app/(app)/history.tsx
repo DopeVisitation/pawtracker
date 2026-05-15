@@ -62,21 +62,30 @@ function HistoryItem({ item, colors }: { item: HistoryEntry; colors: ReturnType<
 
         <View style={styles.metaRow}>
           {eaten && (
-            <View style={[styles.pill, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.pillText, { color: colors.textSecondary }]}>
-                {eaten.emoji} {eaten.label}
+            <View style={[styles.eatenBadge, {
+              backgroundColor: item.eaten_status === 'all' ? colors.successLight
+                : item.eaten_status === 'none' ? colors.dangerLight
+                : colors.surface,
+            }]}>
+              <Text style={styles.eatenEmoji}>{eaten.emoji}</Text>
+              <Text style={[styles.eatenLabel, {
+                color: item.eaten_status === 'all' ? '#166534'
+                  : item.eaten_status === 'none' ? colors.danger
+                  : colors.textSecondary,
+              }]}>
+                {eaten.label}
               </Text>
             </View>
           )}
           {item.rating && (
             <Text style={styles.stars}>{'★'.repeat(item.rating)}{'☆'.repeat(5 - item.rating)}</Text>
           )}
-          {item.fed_by_profile && (
-            <Text style={[styles.fedBy, { color: colors.textMuted }]}>
-              von {item.fed_by_profile.display_name}
-            </Text>
-          )}
         </View>
+        {item.fed_by_profile && (
+          <Text style={[styles.fedBy, { color: colors.textMuted }]}>
+            von {item.fed_by_profile.display_name}
+          </Text>
+        )}
 
         {item.notes && (
           <Text style={[styles.notes, { color: colors.textMuted }]}>📝 {item.notes}</Text>
@@ -208,10 +217,11 @@ const styles = StyleSheet.create({
   foodEmoji:    { fontSize: 16 },
   foodName:     { fontSize: 13, fontWeight: '500' },
   metaRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 },
-  pill:         { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 },
-  pillText:     { fontSize: 11, fontWeight: '600' },
-  stars:        { fontSize: 13, color: '#FFE66D', letterSpacing: 1 },
-  fedBy:        { fontSize: 11 },
+  eatenBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: RADIUS.md, paddingHorizontal: 8, paddingVertical: 4 },
+  eatenEmoji:   { fontSize: 15 },
+  eatenLabel:   { fontSize: 12, fontWeight: '600' },
+  stars:        { fontSize: 13, color: '#F59E0B', letterSpacing: 1 },
+  fedBy:        { fontSize: 11, marginBottom: 2 },
   notes:        { fontSize: 12, fontStyle: 'italic', marginTop: 4 },
 
   empty:        { alignItems: 'center', paddingTop: 80, padding: 24 },
