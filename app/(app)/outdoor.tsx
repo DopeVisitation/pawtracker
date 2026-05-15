@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView,
-  TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert,
+  TouchableOpacity, TextInput, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useAppStore } from '../../stores/appStore';
 import { useColors } from '../../lib/theme-context';
@@ -50,6 +50,7 @@ function ActiveSessionBanner({
   const [elapsed, setElapsed] = useState(formatDuration(session.started_at));
   const [notes, setNotes] = useState('');
   const [showNotes, setShowNotes] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -57,13 +58,6 @@ function ActiveSessionBanner({
     }, 30000);
     return () => clearInterval(interval);
   }, [session.started_at]);
-
-  const handleStop = () => {
-    Alert.alert('Freigang beenden', 'Die Katzen sind wieder drinnen?', [
-      { text: 'Abbrechen', style: 'cancel' },
-      { text: 'Beenden', onPress: () => onStop(notes) },
-    ]);
-  };
 
   return (
     <View style={[styles.activeBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}>
@@ -92,13 +86,33 @@ function ActiveSessionBanner({
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity
-        style={[styles.stopBtn, { backgroundColor: colors.primary }]}
-        onPress={handleStop}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.stopBtnText}>⬛ Freigang beenden</Text>
-      </TouchableOpacity>
+      {showConfirm ? (
+        <View style={[styles.confirmBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.confirmText, { color: colors.text }]}>Die Katzen sind wieder drinnen?</Text>
+          <View style={styles.confirmBtns}>
+            <TouchableOpacity
+              style={[styles.confirmCancelBtn, { borderColor: colors.border }]}
+              onPress={() => setShowConfirm(false)}
+            >
+              <Text style={[styles.confirmCancelText, { color: colors.text }]}>Abbrechen</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmOkBtn, { backgroundColor: colors.primary }]}
+              onPress={() => { setShowConfirm(false); onStop(notes); }}
+            >
+              <Text style={styles.confirmOkText}>Beenden</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.stopBtn, { backgroundColor: colors.primary }]}
+          onPress={() => setShowConfirm(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.stopBtnText}>⬛ Freigang beenden</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -338,6 +352,13 @@ const styles = StyleSheet.create({
   },
   stopBtn:        { borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center' },
   stopBtnText:    { color: '#fff', fontWeight: '700', fontSize: 15 },
+  confirmBox:     { borderRadius: RADIUS.md, padding: 14, borderWidth: 1 },
+  confirmText:    { fontSize: 14, fontWeight: '600', marginBottom: 12, textAlign: 'center' },
+  confirmBtns:    { flexDirection: 'row', gap: 10 },
+  confirmCancelBtn: { flex: 1, borderRadius: RADIUS.md, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5 },
+  confirmCancelText: { fontWeight: '600', fontSize: 14 },
+  confirmOkBtn:   { flex: 1, borderRadius: RADIUS.md, paddingVertical: 11, alignItems: 'center' },
+  confirmOkText:  { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   startCard: {
     borderRadius: RADIUS.xl, padding: 24, marginBottom: 20,

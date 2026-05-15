@@ -18,9 +18,6 @@ import FeedingDetailModal from '../../components/FeedingDetailModal';
 import TipsModal from '../../components/TipsModal';
 import SuccessToast, { FeedSuccessData } from '../../components/SuccessToast';
 
-// ──────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────
 function getGreeting(name: string) {
   const h = new Date().getHours();
   if (h < 12) return `Guten Morgen, ${name}! 🌅`;
@@ -28,13 +25,20 @@ function getGreeting(name: string) {
   return `Guten Abend, ${name}! 🌙`;
 }
 
+interface MealDetail {
+  foodEmoji?: string;
+  foodBgColor?: string;
+  eatenEmoji?: string;
+}
+
 // ──────────────────────────────────────────────────────────────
 // MealPill
 // ──────────────────────────────────────────────────────────────
 function MealPill({
-  type, fedAt, fedBy, foodEmoji, onPress, onViewDetail, colors,
+  type, fedAt, fedBy, detail, onPress, onViewDetail, colors,
 }: {
-  type: MealType; fedAt?: string; fedBy?: string; foodEmoji?: string;
+  type: MealType; fedAt?: string; fedBy?: string;
+  detail?: MealDetail;
   onPress: () => void; onViewDetail: () => void;
   colors: ReturnType<typeof useColors>;
 }) {
@@ -59,7 +63,7 @@ function MealPill({
       onPress={isFed ? onViewDetail : onPress}
       activeOpacity={0.8}
     >
-      <Text style={styles.mealEmoji}>{foodEmoji || info.emoji}</Text>
+      <Text style={styles.mealEmoji}>{info.emoji}</Text>
       <View style={{ flex: 1 }}>
         <Text style={[styles.mealLabel, { color: isFed ? '#166534' : colors.textSecondary }]}>
           {info.label}
@@ -72,7 +76,18 @@ function MealPill({
           </Text>
         )}
       </View>
-      {isFed && <Text style={[styles.checkmark, { color: colors.success }]}>👁</Text>}
+      {isFed && (
+        <View style={styles.mealDetailRow}>
+          {detail?.foodEmoji && detail?.foodBgColor ? (
+            <View style={[styles.mealFoodBadge, { backgroundColor: detail.foodBgColor }]}>
+              <Text style={{ fontSize: 13 }}>{detail.foodEmoji}</Text>
+            </View>
+          ) : null}
+          {detail?.eatenEmoji ? (
+            <Text style={styles.mealEatenEmoji}>{detail.eatenEmoji}</Text>
+          ) : null}
+        </View>
+      )}
       {!isFed && (
         <View style={[styles.feedBtn, { backgroundColor: colors.primary }]}>
           <Text style={styles.feedBtnText}>+</Text>
@@ -86,11 +101,12 @@ function MealPill({
 // CatCard
 // ──────────────────────────────────────────────────────────────
 function CatCard({
-  status, onFeed, onViewDetail, colors,
+  status, onFeed, onViewDetail, getMealDetail, colors,
 }: {
   status: TodayFeedingStatus;
   onFeed: (catId: string, mealType: MealType) => void;
   onViewDetail: (catId: string, mealType: MealType) => void;
+  getMealDetail: (catId: string, mealType: MealType) => MealDetail | undefined;
   colors: ReturnType<typeof useColors>;
 }) {
   const allFed = Boolean(status.morning_fed_at && status.noon_fed_at && status.evening_fed_at);
@@ -116,7 +132,7 @@ function CatCard({
         <View style={styles.catInfo}>
           <Text style={[styles.catName, { color: colors.text }]}>{status.cat_name}</Text>
           <Text style={[styles.catSubtitle, { color: colors.textMuted }]}>
-            {allFed ? '🎉 Alle Mahlzeiten erledigt!' : 'Tippe ✓ für Details'}
+            {allFed ? '🎉 Alle Mahlzeiten erledigt!' : '+ Neu eintragen · Antippen für Details'}
           </Text>
         </View>
       </View>
@@ -126,6 +142,7 @@ function CatCard({
             key={type} type={type} colors={colors}
             fedAt={status[`${type}_fed_at` as keyof TodayFeedingStatus] as string}
             fedBy={status[`${type}_fed_by` as keyof TodayFeedingStatus] as string}
+            detail={getMealDetail(status.cat_id, type)}
             onPress={() => onFeed(status.cat_id, type)}
             onViewDetail={() => onViewDetail(status.cat_id, type)}
           />
@@ -136,7 +153,7 @@ function CatCard({
 }
 
 // ──────────────────────────────────────────────────────────────
-// ActivityCard — with completion, rolling, CRUD button
+// ActivityCard
 // ──────────────────────────────────────────────────────────────
 function ActivityCard({ colors }: { colors: ReturnType<typeof useColors> }) {
   const { profile, household } = useAppStore();
@@ -212,7 +229,6 @@ function ActivityCard({ colors }: { colors: ReturnType<typeof useColors> }) {
           </View>
         </View>
 
-        {/* Action buttons */}
         <View style={styles.activityActions}>
           <TouchableOpacity
             style={[
@@ -255,82 +271,60 @@ function ActivityCard({ colors }: { colors: ReturnType<typeof useColors> }) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// AllCats Recommendation Card
+// AllCatsRecommendationCard — eine Empfehlung pro Mahlzeit
 // ──────────────────────────────────────────────────────────────
 function AllCatsRecommendationCard({ colors }: { colors: ReturnType<typeof useColors> }) {
   const { cats, foods, household } = useAppStore();
-  const [recentFeedings, setRecentFeedings] = useState<any[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [recs, setRecs] = useState<{ morning: any; noon: any; evening: any } | null>(null);
 
   useEffect(() => {
-    if (!household || cats.length === 0) return;
+    if (!household || cats.length === 0 || foods.length === 0) return;
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
     supabase.from('feedings').select('*')
       .eq('household_id', household.id)
       .gte('fed_at', weekAgo)
       .then(({ data }) => {
-        setRecentFeedings(data ?? []);
-        setLoaded(true);
+        const allRecs = getAllCatsMealRecs(cats, foods, (data ?? []) as any);
+        setRecs({
+          morning: allRecs.morning.find((r: any) => r.food !== null)?.food ?? null,
+          noon:    allRecs.noon.find((r: any) => r.food !== null)?.food ?? null,
+          evening: allRecs.evening.find((r: any) => r.food !== null)?.food ?? null,
+        });
       });
-  }, [household?.id, cats.length]);
+  }, [household?.id, cats.length, foods.length]);
 
-  if (!loaded || cats.length === 0 || foods.length === 0) return null;
-
-  const recs = getAllCatsMealRecs(cats, foods, recentFeedings);
+  if (!recs || cats.length === 0 || foods.length === 0) return null;
 
   const MEALS = [
-    { key: 'morning' as const, emoji: '🌅', label: 'Morgens' },
-    { key: 'noon' as const,    emoji: '☀️', label: 'Mittags' },
-    { key: 'evening' as const, emoji: '🌙', label: 'Abends' },
+    { key: 'morning', emoji: '🌅', label: 'Morgens', food: recs.morning },
+    { key: 'noon',    emoji: '☀️', label: 'Mittags', food: recs.noon },
+    { key: 'evening', emoji: '🌙', label: 'Abends',  food: recs.evening },
   ];
 
   return (
     <View style={[styles.recCard, { backgroundColor: colors.card }]}>
       <Text style={[styles.recTitle, { color: colors.text }]}>🍽️ Futter-Empfehlung für heute</Text>
-
-      {MEALS.map(({ key, emoji, label }, idx) => {
-        const mealRecs = recs[key];
-        const hasRecs = mealRecs.some((r) => r.food !== null);
-
+      {MEALS.map(({ key, emoji, label, food }, idx) => {
+        const visual = food ? getFoodVisual(food) : null;
         return (
-          <View key={key} style={[styles.mealSection, idx < MEALS.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-            <View style={styles.mealSectionHeader}>
-              <Text style={styles.mealSectionEmoji}>{emoji}</Text>
-              <Text style={[styles.mealSectionLabel, { color: colors.textSecondary }]}>{label}</Text>
-            </View>
-
-            {hasRecs ? (
-              mealRecs.map((rec) => {
-                if (!rec.food) {
-                  return (
-                    <View key={rec.cat_id} style={styles.recRow}>
-                      <Text style={[styles.recCatName, { color: colors.text }]}>{rec.cat_name}</Text>
-                      <Text style={[styles.recNoFood, { color: colors.textMuted }]}>{rec.reason || 'Leichter Snack'}</Text>
-                    </View>
-                  );
-                }
-                const visual = getFoodVisual(rec.food);
-                return (
-                  <View key={rec.cat_id} style={styles.recRow}>
-                    <Text style={[styles.recCatName, { color: colors.text }]}>{rec.cat_name}</Text>
-                    <View style={[styles.recFoodChip, { backgroundColor: visual.bgColor }]}>
-                      <Text style={styles.recFoodEmoji}>{visual.emoji}</Text>
-                      <View>
-                        <Text style={[styles.recFoodName, { color: visual.color }]}>
-                          {rec.food.name}{rec.food.brand ? ` (${rec.food.brand})` : ''}
-                        </Text>
-                        {rec.reason ? (
-                          <Text style={[styles.recFoodReason, { color: colors.textMuted }]}>{rec.reason}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
+          <View
+            key={key}
+            style={[
+              styles.recMealRow,
+              idx < MEALS.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+            ]}
+          >
+            <Text style={styles.recMealEmoji}>{emoji}</Text>
+            <Text style={[styles.recMealLabel, { color: colors.textSecondary }]}>{label}</Text>
+            {visual && food ? (
+              <View style={[styles.recFoodChip, { backgroundColor: visual.bgColor }]}>
+                <Text style={{ fontSize: 16 }}>{visual.emoji}</Text>
+                <Text style={[styles.recFoodName, { color: visual.color }]} numberOfLines={1}>
+                  {food.name}{food.brand ? ` (${food.brand})` : ''}
+                </Text>
+              </View>
             ) : (
-              <Text style={[styles.recNoFood, { color: colors.textMuted, marginLeft: 8, marginBottom: 8 }]}>
-                Leichter Snack
-              </Text>
+              <Text style={[styles.recNoFood, { color: colors.textMuted }]}>Kein Vorrat</Text>
             )}
           </View>
         );
@@ -340,7 +334,7 @@ function AllCatsRecommendationCard({ colors }: { colors: ReturnType<typeof useCo
 }
 
 // ──────────────────────────────────────────────────────────────
-// RecentFeedingsCard — kompakte Verlaufsübersicht auf dem Dashboard
+// RecentFeedingsCard
 // ──────────────────────────────────────────────────────────────
 interface FeedingEntry {
   id: string;
@@ -383,22 +377,19 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
   const todayStr = new Date().toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
   const yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
 
-  const today = feedings.filter((f) =>
-    new Date(f.fed_at).toDateString() === new Date().toDateString()
-  );
+  const today = feedings.filter((f) => new Date(f.fed_at).toDateString() === new Date().toDateString());
   const yesterday = feedings.filter((f) =>
     new Date(f.fed_at).toDateString() === new Date(Date.now() - 86400000).toDateString()
   );
 
   const renderEntry = (entry: FeedingEntry) => {
     const time = new Date(entry.fed_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const mealEmoji = { morning: '🌅', noon: '☀️', evening: '🌙', extra: '⭐' }[entry.meal_type] ?? '🍽️';
+    const mealEmoji = ({ morning: '🌅', noon: '☀️', evening: '🌙', extra: '⭐' } as any)[entry.meal_type] ?? '🍽️';
     const statusData = entry.eaten_status ? EATEN_STATUS_LABELS[entry.eaten_status] : null;
     const foodVisual = entry.food ? getFoodVisual(entry.food as any) : null;
 
     return (
       <View key={entry.id} style={[styles.feedEntry, { borderBottomColor: colors.border }]}>
-        {/* Cat avatar */}
         {entry.cat?.photo_url ? (
           <Image source={{ uri: entry.cat.photo_url }} style={styles.feedCatAvatar} contentFit="cover" />
         ) : (
@@ -406,8 +397,6 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
             <Text style={{ fontSize: 14 }}>🐱</Text>
           </View>
         )}
-
-        {/* Content */}
         <View style={{ flex: 1 }}>
           <View style={styles.feedEntryRow}>
             <Text style={[styles.feedCatName, { color: colors.text }]}>{entry.cat?.name}</Text>
@@ -426,14 +415,10 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
             ) : (
               <Text style={[styles.feedFoodName, { color: colors.textMuted }]}>—</Text>
             )}
-            {statusData && (
-              <Text style={styles.feedStatusEmoji}>{statusData.emoji}</Text>
-            )}
+            {statusData && <Text style={styles.feedStatusEmoji}>{statusData.emoji}</Text>}
           </View>
           {entry.fed_by_profile && (
-            <Text style={[styles.feedBy, { color: colors.textMuted }]}>
-              von {entry.fed_by_profile.display_name}
-            </Text>
+            <Text style={[styles.feedBy, { color: colors.textMuted }]}>von {entry.fed_by_profile.display_name}</Text>
           )}
         </View>
       </View>
@@ -443,7 +428,6 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
   return (
     <View style={[styles.historyCard, { backgroundColor: colors.card }]}>
       <Text style={[styles.historyTitle, { color: colors.text }]}>📋 Letzte Fütterungen</Text>
-
       {today.length > 0 && (
         <View>
           <Text style={[styles.historyDateLabel, { color: colors.textMuted, backgroundColor: colors.surface }]}>
@@ -452,7 +436,6 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
           {today.map(renderEntry)}
         </View>
       )}
-
       {yesterday.length > 0 && (
         <View>
           <Text style={[styles.historyDateLabel, { color: colors.textMuted, backgroundColor: colors.surface }]}>
@@ -469,13 +452,43 @@ function RecentFeedingsCard({ colors }: { colors: ReturnType<typeof useColors> }
 // Main Dashboard
 // ──────────────────────────────────────────────────────────────
 export default function DashboardScreen() {
-  const { profile, todayStatus, isLoading, fetchTodayStatus } = useAppStore();
+  const { profile, household, todayStatus, isLoading, fetchTodayStatus } = useAppStore();
   const colors = useColors();
   const [feedTarget, setFeedTarget] = useState<{ catId: string; mealType: MealType } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ catId: string; mealType: MealType } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState(false);
   const [toastData, setToastData] = useState<FeedSuccessData | undefined>();
+  const [mealDetailsMap, setMealDetailsMap] = useState<Record<string, MealDetail>>({});
+
+  const fetchMealDetails = useCallback(async () => {
+    if (!household) return;
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('feedings')
+      .select('cat_id, meal_type, eaten_status, food:foods(name, brand, type)')
+      .eq('household_id', household.id)
+      .gte('fed_at', `${today}T00:00:00`);
+
+    const map: Record<string, MealDetail> = {};
+    for (const f of (data ?? []) as any[]) {
+      const visual = f.food ? getFoodVisual(f.food) : null;
+      const eatenData = f.eaten_status ? EATEN_STATUS_LABELS[f.eaten_status as EatenStatus] : null;
+      map[`${f.cat_id}_${f.meal_type}`] = {
+        foodEmoji: visual?.emoji,
+        foodBgColor: visual?.bgColor,
+        eatenEmoji: eatenData?.emoji,
+      };
+    }
+    setMealDetailsMap(map);
+  }, [household?.id]);
+
+  // Refresh meal details whenever todayStatus changes (incl. realtime updates)
+  useEffect(() => { fetchMealDetails(); }, [todayStatus]);
+
+  const getMealDetail = useCallback((catId: string, mealType: MealType): MealDetail | undefined => {
+    return mealDetailsMap[`${catId}_${mealType}`];
+  }, [mealDetailsMap]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -500,7 +513,6 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.dateText, { color: colors.textMuted }]}>{dateStr}</Text>
           <Text style={[styles.greeting, { color: colors.text }]}>
@@ -519,24 +531,20 @@ export default function DashboardScreen() {
           ) : null}
         </View>
 
-        {/* Tipp des Tages */}
         <ActivityCard colors={colors} />
-
-        {/* Futter-Empfehlung für alle Katzen (Morgens / Mittags / Abends) */}
         <AllCatsRecommendationCard colors={colors} />
 
-        {/* Katzen-Karten mit Fütterungsstatus */}
         {todayStatus.map((status) => (
           <CatCard
             key={status.cat_id}
             status={status}
             colors={colors}
+            getMealDetail={getMealDetail}
             onFeed={(catId, mealType) => setFeedTarget({ catId, mealType })}
             onViewDetail={(catId, mealType) => setDetailTarget({ catId, mealType })}
           />
         ))}
 
-        {/* Kompakte Verlaufsübersicht */}
         <RecentFeedingsCard colors={colors} />
 
         {todayStatus.length === 0 && !isLoading && (
@@ -590,10 +598,7 @@ const styles = StyleSheet.create({
   successBanner: { borderRadius: RADIUS.md, padding: 12, borderLeftWidth: 3 },
   successText:  { fontWeight: '600', fontSize: 14 },
 
-  // Activity card
-  activityCard: {
-    borderRadius: RADIUS.xl, padding: 16, marginBottom: 14, ...SHADOWS.sm,
-  },
+  activityCard: { borderRadius: RADIUS.xl, padding: 16, marginBottom: 14, ...SHADOWS.sm },
   activityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   activityTitle:  { fontSize: 14, fontWeight: '700' },
   durationPill:   { borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4 },
@@ -605,101 +610,60 @@ const styles = StyleSheet.create({
   activityName:   { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   activityDesc:   { fontSize: 13, lineHeight: 18 },
   activityActions: { flexDirection: 'row', gap: 8 },
-  activityBtn: {
-    flex: 1, borderRadius: RADIUS.md, paddingVertical: 11,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  activityBtn:    { flex: 1, borderRadius: RADIUS.md, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
   activityBtnText: { fontWeight: '700', fontSize: 13 },
-  activityBtnSecondary: {
-    flex: 1, borderRadius: RADIUS.md, paddingVertical: 11,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5,
-  },
+  activityBtnSecondary: { flex: 1, borderRadius: RADIUS.md, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   activityBtnSecondaryText: { fontWeight: '600', fontSize: 13 },
 
-  // Cat card
-  catCard:      { borderRadius: RADIUS.xl, padding: 20, marginBottom: 8, ...SHADOWS.md },
-  catHeader:    { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  catCard:       { borderRadius: RADIUS.xl, padding: 20, marginBottom: 8, ...SHADOWS.md },
+  catHeader:     { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   catAvatarWrap: { position: 'relative', marginRight: 14 },
-  catAvatar:    { width: 56, height: 56, borderRadius: 999 },
-  catAvatarFallback: {
-    width: 56, height: 56, borderRadius: 999,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  catAvatar:     { width: 56, height: 56, borderRadius: 999 },
+  catAvatarFallback: { width: 56, height: 56, borderRadius: 999, justifyContent: 'center', alignItems: 'center' },
   catAvatarEmoji: { fontSize: 28 },
-  catBadge: {
-    position: 'absolute', bottom: -2, right: -2,
-    borderRadius: 999, width: 20, height: 20,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#fff',
-  },
+  catBadge:      { position: 'absolute', bottom: -2, right: -2, borderRadius: 999, width: 20, height: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
   catBadgeText:  { color: '#fff', fontSize: 10, fontWeight: '800' },
   catInfo:       { flex: 1 },
   catName:       { fontSize: 20, fontWeight: '800' },
-  catSubtitle:   { fontSize: 13, marginTop: 2 },
+  catSubtitle:   { fontSize: 12, marginTop: 2 },
   mealRow:       { gap: 8 },
-  mealPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 12, borderRadius: RADIUS.md, borderWidth: 1.5,
-  },
-  mealEmoji:    { fontSize: 20 },
-  mealLabel:    { fontSize: 14, fontWeight: '600' },
-  mealTime:     { fontSize: 11, marginTop: 1 },
-  mealOpenText: { fontSize: 11, marginTop: 1 },
-  checkmark:    { marginLeft: 'auto', fontSize: 18, fontWeight: '700' },
-  feedBtn: {
-    width: 28, height: 28, borderRadius: 999,
-    justifyContent: 'center', alignItems: 'center', marginLeft: 'auto',
-  },
-  feedBtnText:  { color: '#fff', fontSize: 20, fontWeight: '700', lineHeight: 24 },
+  mealPill:      { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: RADIUS.md, borderWidth: 1.5 },
+  mealEmoji:     { fontSize: 20 },
+  mealLabel:     { fontSize: 14, fontWeight: '600' },
+  mealTime:      { fontSize: 11, marginTop: 1 },
+  mealOpenText:  { fontSize: 11, marginTop: 1 },
+  mealDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  mealFoodBadge: { width: 26, height: 26, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
+  mealEatenEmoji: { fontSize: 18 },
+  feedBtn:       { width: 28, height: 28, borderRadius: 999, justifyContent: 'center', alignItems: 'center' },
+  feedBtnText:   { color: '#fff', fontSize: 20, fontWeight: '700', lineHeight: 24 },
 
-  // Recommendation card
-  recCard:          { borderRadius: RADIUS.xl, padding: 16, marginBottom: 14, ...SHADOWS.sm },
-  recTitle:         { fontSize: 14, fontWeight: '700', marginBottom: 12 },
-  mealSection:      { paddingBottom: 10, marginBottom: 10 },
-  mealSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  mealSectionEmoji: { fontSize: 16 },
-  mealSectionLabel: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  recRow:           { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, paddingLeft: 4 },
-  recCatName:       { fontSize: 13, fontWeight: '700', width: 60 },
-  recFoodChip: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 6,
-  },
-  recFoodEmoji:     { fontSize: 18 },
-  recFoodName:      { fontSize: 13, fontWeight: '700' },
-  recFoodReason:    { fontSize: 10, marginTop: 1 },
-  recNoFood:        { fontSize: 12, fontStyle: 'italic' },
+  recCard:       { borderRadius: RADIUS.xl, padding: 16, marginBottom: 14, ...SHADOWS.sm },
+  recTitle:      { fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  recMealRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  recMealEmoji:  { fontSize: 18, width: 24 },
+  recMealLabel:  { fontSize: 13, fontWeight: '700', width: 56 },
+  recFoodChip:   { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 6 },
+  recFoodName:   { fontSize: 13, fontWeight: '700', flex: 1 },
+  recNoFood:     { fontSize: 12, fontStyle: 'italic' },
 
-  // Recent feedings card
-  historyCard:      { borderRadius: RADIUS.xl, padding: 0, marginBottom: 14, ...SHADOWS.sm, overflow: 'hidden' },
-  historyTitle:     { fontSize: 14, fontWeight: '700', padding: 14, paddingBottom: 8 },
-  historyDateLabel: {
-    fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
-    letterSpacing: 0.5, paddingHorizontal: 14, paddingVertical: 6,
-  },
-  feedEntry: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  feedCatAvatar:        { width: 34, height: 34, borderRadius: 999 },
-  feedCatAvatarFallback: {
-    width: 34, height: 34, borderRadius: 999,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  feedEntryRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
-  feedCatName:      { fontSize: 13, fontWeight: '700' },
-  feedTime:         { fontSize: 11 },
-  feedFoodRow:      { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  historyCard:   { borderRadius: RADIUS.xl, marginBottom: 14, ...SHADOWS.sm, overflow: 'hidden' },
+  historyTitle:  { fontSize: 14, fontWeight: '700', padding: 14, paddingBottom: 8 },
+  historyDateLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 14, paddingVertical: 6 },
+  feedEntry:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  feedCatAvatar: { width: 34, height: 34, borderRadius: 999 },
+  feedCatAvatarFallback: { width: 34, height: 34, borderRadius: 999, justifyContent: 'center', alignItems: 'center' },
+  feedEntryRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  feedCatName:   { fontSize: 13, fontWeight: '700' },
+  feedTime:      { fontSize: 11 },
+  feedFoodRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   feedFoodIconBadge: { width: 22, height: 22, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
-  feedFoodName:     { fontSize: 12, flex: 1 },
-  feedStatusEmoji:  { fontSize: 16, marginLeft: 4 },
-  feedBy:           { fontSize: 11, marginTop: 1 },
+  feedFoodName:  { fontSize: 12, flex: 1 },
+  feedStatusEmoji: { fontSize: 16, marginLeft: 4 },
+  feedBy:        { fontSize: 11, marginTop: 1 },
 
-  // Empty state
-  emptyState:   { alignItems: 'center', paddingTop: 80 },
-  emptyEmoji:   { fontSize: 64, marginBottom: 16 },
-  emptyTitle:   { fontSize: 20, fontWeight: '700', marginBottom: 8 },
-  emptyText:    { fontSize: 15, textAlign: 'center' },
+  emptyState:    { alignItems: 'center', paddingTop: 80 },
+  emptyEmoji:    { fontSize: 64, marginBottom: 16 },
+  emptyTitle:    { fontSize: 20, fontWeight: '700', marginBottom: 8 },
+  emptyText:     { fontSize: 15, textAlign: 'center' },
 });
